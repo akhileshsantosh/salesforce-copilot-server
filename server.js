@@ -1,52 +1,66 @@
 const express = require("express");
-const axios = require("axios");
 const cors = require("cors");
+const jsforce = require("jsforce");
 require("dotenv").config();
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Salesforce Credentials from .env
-const SF_CLIENT_ID = process.env.SALESFORCE_CLIENT_ID;
-const SF_CLIENT_SECRET = process.env.SALESFORCE_CLIENT_SECRET;
-const SF_USERNAME = process.env.SALESFORCE_USERNAME;
-const SF_PASSWORD = process.env.SALESFORCE_PASSWORD;
-const SF_LOGIN_URL = process.env.SALESFORCE_LOGIN_URL;
+const SF_LOGIN_URL = "https://login.salesforce.com"; 
+const SF_CLIENT_ID = process.env.SF_CLIENT_ID;
+const SF_CLIENT_SECRET = process.env.SF_CLIENT_SECRET;
+const SF_USERNAME = process.env.SF_USERNAME;
+const SF_PASSWORD = process.env.SF_PASSWORD;
 
-// Function to get Salesforce Access Token
-async function getSalesforceToken() {
+let conn = new jsforce.Connection({ loginUrl: SF_LOGIN_URL });
+
+// Salesforce Authentication
+const loginToSalesforce = async () => {
   try {
-    const response = await axios.post(`${SF_LOGIN_URL}/services/oauth2/token`, null, {
-      params: {
-        grant_type: "password",
-        client_id: SF_CLIENT_ID,
-        client_secret: SF_CLIENT_SECRET,
-        username: SF_USERNAME,
-        password: SF_PASSWORD
-      },
-    });
-
-    return response.data.access_token;
+    await conn.login(SF_USERNAME, SF_PASSWORD);
+    console.log("✅ Connected to Salesforce");
   } catch (error) {
-    console.error("Salesforce Authentication Error:", error.response?.data || error.message);
-    throw new Error("Failed to authenticate with Salesforce");
+    console.error("❌ Salesforce Login Failed:", error);
   }
-}
+};
 
-// Route to fetch Salesforce Opportunities
-app.get("/opportunities", async (req, res) => {
+// Call login function on server startup
+loginToSalesforce();
+
+// Function to fetch opportunities from Salesforce
+const fetchOpportunities = async (query) => {
   try {
-    const token = await getSalesforceToken();
-    const response = await axios.get(
-      "https://whatfix.my.salesforce.com/services/data/v52.0/query/?q=SELECT Name,StageName,CloseDate FROM Opportunity",
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    res.json(response.data.records);
+    const result = await conn.query(query);
+    return result.records;
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("❌ Salesforce Query Error:", error);
+    return [];
   }
+};
+
+// API Endpoint to return JSON response
+app.get("/opportunity-response", async (req, res) => {
+  const userQuery = req.query.query;
+
+  let sfQuery = "";
+  let responseData = [];
+
+  if (userQuery === "Get all my opportunities") {
+    sfQuery = "SELECT Name, StageName, Amount FROM Opportunity WHERE IsClosed = false";
+  } else if (userQuery === "Give all opportunities closing this month") {
+    sfQuery = "SELECT Name, StageName, Amount, CloseDate FROM Opportunity WHERE CloseDate = THIS_MONTH";
+  } else if (userQuery === "What is the biggest opportunity I am working on?") {
+    sfQuery = "SELECT Name, Amount, StageName FROM Opportunity ORDER BY Amount DESC LIMIT 1";
+  }
+
+  if (sfQuery) {
+    responseData = await fetchOpportunities(sfQuery);
+  }
+
+  res.json({ data: responseData });
 });
 
 // Start Server
-app.listen(5000, () => console.log("Backend running on port 5000"));
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));

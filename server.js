@@ -39,7 +39,7 @@ app.get("/opportunities", async (req, res) => {
   try {
     const token = await getSalesforceToken();
     const response = await axios.get(
-      "https://your-salesforce-instance.salesforce.com/services/data/v52.0/query/?q=SELECT Name,StageName,CloseDate FROM Opportunity",
+      "https://whatfix.my.salesforce.com/services/data/v52.0/query/?q=SELECT Name,StageName,CloseDate FROM Opportunity",
       { headers: { Authorization: `Bearer ${token}` } }
     );
     res.json(response.data.records);
